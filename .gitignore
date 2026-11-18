@@ -5,7 +5,7 @@
 .terraform.tfstate.lock.info
 tfplan
 plan.txt
+plan-show.txt
 apply.log
-*.tfvars
-!example.tfvars
+*.tfvars.local
 .DS_Store
