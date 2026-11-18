@@ -9,7 +9,7 @@ resource "circleci_project" "this" {
 
   name              = each.key
   organization_id   = var.organization_id
-  set_github_status = false
+  set_github_status = true
 }
 
 resource "circleci_pipeline" "build" {
