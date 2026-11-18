@@ -7,10 +7,10 @@ locals {
 resource "circleci_project" "this" {
   for_each = local.projects
 
-  name              = each.key
-  organization_id   = var.organization_id
-  set_github_status = false
-  auto_cancel_builds  = true
+  name               = each.key
+  organization_id    = var.organization_id
+  set_github_status  = false
+  auto_cancel_builds = true
 }
 
 resource "circleci_pipeline" "build" {
