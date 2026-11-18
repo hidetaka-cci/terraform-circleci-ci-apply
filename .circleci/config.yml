@@ -15,6 +15,19 @@ commands:
               "https://releases.hashicorp.com/terraform/<< pipeline.parameters.terraform_version >>/terraform_<< pipeline.parameters.terraform_version >>_linux_amd64.zip"
             unzip -q -o /tmp/tf.zip -d /tmp && sudo mv /tmp/terraform /usr/local/bin/terraform
             terraform version
+  install_circleci_cli:
+    steps:
+      - run:
+          name: Ensure CircleCI CLI is available
+          command: |
+            if command -v circleci >/dev/null 2>&1; then
+              echo "cimg image already has CircleCI CLI"
+              circleci version
+            else
+              echo "CircleCI CLI not found in image; installing"
+              curl -fLSs https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/main/install.sh | sudo bash
+              circleci version
+            fi
   aws_oidc:
     steps:
       - run:
@@ -25,6 +38,15 @@ commands:
               echo 'export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc_token'
               echo 'export AWS_ROLE_SESSION_NAME=circleci-${CIRCLE_WORKFLOW_ID}'
             } >> "$BASH_ENV"
+  check_latest_main:
+    parameters:
+      mode:
+        type: enum
+        enum: [report, cancel]
+    steps:
+      - run:
+          name: Check whether this commit is the latest on main (<< parameters.mode >>)
+          command: bash .circleci/scripts/check-latest-main.sh << parameters.mode >>
 
 jobs:
   plan:
@@ -32,6 +54,8 @@ jobs:
       - image: cimg/base:stable
     steps:
       - checkout
+      - check_latest_main:
+          mode: report
       - install_terraform
       - aws_oidc
       - run: terraform init -input=false
@@ -59,11 +83,23 @@ jobs:
       - attach_workspace:
           at: .
       - install_terraform
+      - install_circleci_cli
       - aws_oidc
       - run: terraform init -input=false
+      - check_latest_main:
+          mode: cancel
       - run:
           name: terraform apply (saved plan)
-          command: terraform apply -input=false -lock-timeout=60s tfplan
+          command: |
+            set +e
+            terraform apply -input=false -lock-timeout=60s tfplan 2>&1 | tee apply.log
+            code=${PIPESTATUS[0]}
+            set -e
+            if [ "$code" -ne 0 ] && grep -q 'Saved plan is stale' apply.log; then
+              echo "plan が古い: この pipeline の plan のあと、別の apply で state が変わった。"
+              echo "この pipeline の workflow を「Rerun workflow from start」で再実行して plan を作り直し、改めて hold-apply を承認する。"
+            fi
+            exit "$code"
 
 workflows:
   terraform:
