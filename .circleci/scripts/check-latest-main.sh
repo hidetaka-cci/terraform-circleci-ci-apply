@@ -26,7 +26,7 @@ if [ "$mode" = "cancel" ]; then
   : "${CIRCLE_WORKFLOW_ID:?CIRCLE_WORKFLOW_ID が空}"
   : "${CIRCLE_TOKEN:?CIRCLE_TOKEN が空（context が必要）}"
   echo "main に新しいコミットがあるので、この pipeline では apply せず、この workflow をキャンセルする。新しいコミットの pipeline で apply する"
-  circleci workflow cancel --workflow-id "${CIRCLE_WORKFLOW_ID}"
+  circleci workflow cancel --force "${CIRCLE_WORKFLOW_ID}"
   # キャンセルが効くとこの job は止められる。効かないまま apply に進まないよう待ち、止まらなければ失敗させる
   sleep 120
   echo "キャンセルが 120 秒以内に効かなかった。apply せずに失敗させる" >&2
