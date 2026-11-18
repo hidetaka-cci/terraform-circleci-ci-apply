@@ -20,12 +20,20 @@ commands:
       - run:
           name: Ensure CircleCI CLI is available
           command: |
-            if command -v circleci >/dev/null 2>&1; then
-              echo "cimg image already has CircleCI CLI"
+            # cimg/base の PATH にある circleci は Build Agent のラッパーで、
+            # `circleci workflow cancel` は使えない。本物の CLI か確かめてから入れる。
+            need_install=1
+            if command -v circleci >/dev/null 2>&1 && circleci version 2>/dev/null | grep -Eq '^[0-9]+\.[0-9]+'; then
+              echo "CircleCI CLI already installed"
               circleci version
-            else
-              echo "CircleCI CLI not found in image; installing"
+              need_install=0
+            fi
+            if [ "$need_install" -eq 1 ]; then
+              echo "Installing CircleCI CLI (cimg circleci is Build Agent, not CLI)"
               curl -fLSs https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/main/install.sh | sudo bash
+              # Prefer /usr/local/bin over any agent shim
+              export PATH="/usr/local/bin:$PATH"
+              echo 'export PATH="/usr/local/bin:$PATH"' >> "$BASH_ENV"
               circleci version
             fi
   aws_oidc:
