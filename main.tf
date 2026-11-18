@@ -14,7 +14,7 @@ resource "circleci_project" "this" {
 resource "circleci_pipeline" "build" {
   project_id  = circleci_project.this["terraform-circleci-ci-apply"].id
   name        = "build"
-  description = "GitHub App pipeline for terraform CI apply verification"
+  description = "GitHub App pipeline for plan/approve/apply verification"
 
   config_source_provider         = "github_app"
   config_source_repo_external_id = var.repo_external_id
