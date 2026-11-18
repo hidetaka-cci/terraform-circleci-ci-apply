@@ -1,14 +1,84 @@
 version: 2.1
 
+parameters:
+  terraform_version:
+    type: string
+    default: "1.17.2"
+
+commands:
+  install_terraform:
+    steps:
+      - run:
+          name: Install Terraform
+          command: |
+            curl -fsSL -o /tmp/tf.zip \
+              "https://releases.hashicorp.com/terraform/<< pipeline.parameters.terraform_version >>/terraform_<< pipeline.parameters.terraform_version >>_linux_amd64.zip"
+            unzip -q -o /tmp/tf.zip -d /tmp && sudo mv /tmp/terraform /usr/local/bin/terraform
+            terraform version
+  aws_oidc:
+    steps:
+      - run:
+          name: Configure AWS credentials via CircleCI OIDC
+          command: |
+            echo "$CIRCLE_OIDC_TOKEN_V2" > /tmp/oidc_token
+            {
+              echo 'export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc_token'
+              echo 'export AWS_ROLE_SESSION_NAME=circleci-${CIRCLE_WORKFLOW_ID}'
+            } >> "$BASH_ENV"
+
 jobs:
-  hello:
+  plan:
     docker:
-      - image: cimg/base:current
+      - image: cimg/base:stable
     steps:
       - checkout
-      - run: echo "Hello from terraform-circleci-ci-apply sample"
+      - install_terraform
+      - aws_oidc
+      - run: terraform init -input=false
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - run:
+          name: terraform plan
+          command: |
+            terraform plan -input=false -lock-timeout=60s -out=tfplan | tee plan.txt
+            echo "==== terraform show tfplan (sanitized check) ===="
+            terraform show -no-color tfplan | tee plan-show.txt
+      - store_artifacts:
+          path: plan.txt
+      - store_artifacts:
+          path: plan-show.txt
+      - persist_to_workspace:
+          root: .
+          paths: [tfplan]
+
+  apply:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - install_terraform
+      - aws_oidc
+      - run: terraform init -input=false
+      - run:
+          name: terraform apply (saved plan)
+          command: terraform apply -input=false -lock-timeout=60s tfplan
 
 workflows:
-  main:
+  terraform:
     jobs:
-      - hello
+      - plan:
+          context: [terraform-ci-apply]
+      - hold-apply:
+          type: approval
+          requires: [plan]
+          filters:
+            branches:
+              only: main
+      - apply:
+          context: [terraform-ci-apply]
+          requires: [hold-apply]
+          filters:
+            branches:
+              only: main
