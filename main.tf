@@ -10,7 +10,7 @@ resource "circleci_project" "this" {
   name               = each.key
   organization_id    = var.organization_id
   set_github_status  = true
-  auto_cancel_builds = true
+  auto_cancel_builds = false
 }
 
 resource "circleci_pipeline" "build" {
