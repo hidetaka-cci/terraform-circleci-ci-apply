@@ -1,0 +1,47 @@
+version: 2.1
+
+# Terraform のドリフト検出専用 config（スケジュール実行 / 手動実行用）。
+#  - 読み取り専用: plan のみ。apply はしない
+#  - 終了コード 0: 差分なし（成功）/ 2: ドリフトあり（失敗）/ 1: エラー（失敗）
+
+functions:
+  setup-terraform: github.com/circleci-functions/setup-terraform@v0.4.0
+  setup-aws: github.com/circleci-functions/setup-aws@v0.4.0
+
+jobs:
+  drift-detect:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup-terraform:
+          with:
+            version: "1.17.2"
+      - setup-aws:
+          with:
+            configure-credentials: true
+            role-arn: arn:aws:iam::992382483259:role/hidetaka-terraform-ci-apply
+            region: us-west-2
+            role-session-name: circleci-terraform-drift-detect
+      - run: terraform init -input=false
+      - run:
+          name: terraform plan (drift detection)
+          command: |
+            set +e
+            terraform plan -detailed-exitcode -input=false -lock-timeout=60s -no-color 2>&1 | tee plan.txt
+            code=${PIPESTATUS[0]}
+            set -e
+            case "$code" in
+              0) echo "No drift: infrastructure matches the configuration." ;;
+              2) echo "DRIFT DETECTED: see plan above (artifact: plan.txt)." ;;
+              *) echo "terraform plan failed (exit $code)." ;;
+            esac
+            exit "$code"
+      - store_artifacts:
+          path: plan.txt
+
+workflows:
+  drift-detect:
+    jobs:
+      - drift-detect:
+          context: [terraform-ci-apply]
