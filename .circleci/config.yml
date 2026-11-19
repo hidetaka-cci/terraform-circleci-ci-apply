@@ -1,20 +1,10 @@
 version: 2.1
 
-parameters:
-  terraform_version:
-    type: string
-    default: "1.17.2"
+functions:
+  setup-terraform: github.com/circleci-functions/setup-terraform@v0.4.0
+  setup-aws: github.com/circleci-functions/setup-aws@v0.4.0
 
 commands:
-  install_terraform:
-    steps:
-      - run:
-          name: Install Terraform
-          command: |
-            curl -fsSL -o /tmp/tf.zip \
-              "https://releases.hashicorp.com/terraform/<< pipeline.parameters.terraform_version >>/terraform_<< pipeline.parameters.terraform_version >>_linux_amd64.zip"
-            unzip -q -o /tmp/tf.zip -d /tmp && sudo mv /tmp/terraform /usr/local/bin/terraform
-            terraform version
   install_circleci_cli:
     steps:
       - run:
@@ -22,6 +12,8 @@ commands:
           command: |
             # cimg/base の PATH にある circleci は Build Agent のラッパーで、
             # `circleci workflow cancel` は使えない。本物の CLI か確かめてから入れる。
+            # setup-aws の OIDC は Agent 側の `circleci run oidc get` を使うため、
+            # このステップは setup-aws のあとに置く。
             need_install=1
             if command -v circleci >/dev/null 2>&1 && circleci version 2>/dev/null | grep -Eq '^[0-9]+\.[0-9]+'; then
               echo "CircleCI CLI already installed"
@@ -31,21 +23,10 @@ commands:
             if [ "$need_install" -eq 1 ]; then
               echo "Installing CircleCI CLI (cimg circleci is Build Agent, not CLI)"
               curl -fLSs https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/main/install.sh | sudo bash
-              # Prefer /usr/local/bin over any agent shim
               export PATH="/usr/local/bin:$PATH"
               echo 'export PATH="/usr/local/bin:$PATH"' >> "$BASH_ENV"
               circleci version
             fi
-  aws_oidc:
-    steps:
-      - run:
-          name: Configure AWS credentials via CircleCI OIDC
-          command: |
-            echo "$CIRCLE_OIDC_TOKEN_V3" > /tmp/oidc_token
-            {
-              echo 'export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc_token'
-              echo 'export AWS_ROLE_SESSION_NAME=circleci-${CIRCLE_WORKFLOW_ID}'
-            } >> "$BASH_ENV"
   check_latest_main:
     parameters:
       mode:
@@ -64,8 +45,15 @@ jobs:
       - checkout
       - check_latest_main:
           mode: report
-      - install_terraform
-      - aws_oidc
+      - setup-terraform:
+          with:
+            version: "1.17.2"
+      - setup-aws:
+          with:
+            configure-credentials: true
+            role-arn: arn:aws:iam::992382483259:role/hidetaka-terraform-ci-apply
+            region: us-west-2
+            role-session-name: circleci-terraform-plan
       - run: terraform init -input=false
       - run: terraform fmt -check -recursive
       - run: terraform validate
@@ -90,9 +78,17 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
-      - install_terraform
+      - setup-terraform:
+          with:
+            version: "1.17.2"
+      # OIDC は Agent の circleci でトークンを取るため、本物 CLI の導入より先に実行する
+      - setup-aws:
+          with:
+            configure-credentials: true
+            role-arn: arn:aws:iam::992382483259:role/hidetaka-terraform-ci-apply
+            region: us-west-2
+            role-session-name: circleci-terraform-apply
       - install_circleci_cli
-      - aws_oidc
       - run: terraform init -input=false
       - check_latest_main:
           mode: cancel
