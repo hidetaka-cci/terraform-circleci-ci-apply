@@ -60,6 +60,6 @@ resource "circleci_trigger" "drift_detect_schedule" {
   event_name                              = "daily-drift-detect"
   checkout_ref                            = "main"
   config_ref                              = "main"
-  event_source_schedule_cron_expression   = "25 4 * * *"
+  event_source_schedule_cron_expression   = "0 0 * * *"
   event_source_schedule_attribution_actor = "system"
 }
